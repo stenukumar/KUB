@@ -1,0 +1,7 @@
+node_modules/
+.env
+firebase.json
+serviceAccountKey.json
+*.log
+.DS_Store
+qr-output/

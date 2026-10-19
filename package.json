@@ -1,0 +1,25 @@
+{
+  "name": "known-you-qr-backend",
+  "version": "2.0.0",
+  "description": "QR product registration API (Express + Firebase Firestore + Fast2SMS + Gmail/Nodemailer)",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch server.js",
+    "test": "node --test tests/*.test.js",
+    "seed": "node scripts/seed-serials.js",
+    "qr": "node scripts/generate-qr.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "axios": "^1.19.0",
+    "cors": "^2.8.6",
+    "dotenv": "^17.4.2",
+    "express": "^5.1.0",
+    "firebase-admin": "^14.3.0",
+    "nodemailer": "^9.0.5",
+    "qrcode": "^1.5.4"
+  }
+}
