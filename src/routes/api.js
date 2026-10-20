@@ -14,11 +14,17 @@ const fail = (res, status, code, message, extra = {}) =>
   res.status(status).json({ success: false, code, message, ...extra });
 
 /**
- * Hash mapping switch. While the printed QR codes still contain plain serial numbers keep this "true";
- * once every QR code uses the hash links, set ALLOW_PLAIN_SERIAL=false in .env so serial numbers
- * can no longer be used to look up or register products.
+ * Hash mapping switch.
+ *  - QR_HASH_SECRET is set in .env  -> hash mapping is ON: only hash links (/r/<hash>) can verify or register a product.
+ *  - QR_HASH_SECRET is not set      -> plain serial links keep working (nothing is enforced).
+ * ALLOW_PLAIN_SERIAL=true / false overrides this (for example "true" while old QR codes are still in use).
  */
-const allowPlainSerial = () => String(process.env.ALLOW_PLAIN_SERIAL ?? "true").trim().toLowerCase() !== "false";
+const allowPlainSerial = () => {
+  const setting = String(process.env.ALLOW_PLAIN_SERIAL ?? "").trim().toLowerCase();
+  if (setting === "true") return true;
+  if (setting === "false") return false;
+  return !String(process.env.QR_HASH_SECRET || "").trim();
+};
 
 /**
  * If Firestore does not answer (network, firewall, VPN, wrong credentials, wrong PC clock ...) the request would
@@ -49,6 +55,12 @@ const settled = (result) =>
 
 function createApiRouter({ db, products, sms, mailer, incidents, otp }) {
   const router = express.Router();
+
+  console.log(
+    allowPlainSerial()
+      ? "QR hash mapping: OFF - plain serial links still work (set QR_HASH_SECRET in .env to turn it on)"
+      : "QR hash mapping: ON - only hash links (/r/<hash>) can verify or register products"
+  );
 
   const writeLimit = rateLimit({ windowMs: 10 * 60 * 1000, max: 30 });
   const readLimit = rateLimit({ windowMs: 60 * 1000, max: 120 });
@@ -183,16 +195,20 @@ function createApiRouter({ db, products, sms, mailer, incidents, otp }) {
 
       const started = Date.now();
       const result = await withTimeout(products.register(serial, { customerName, email, phone }), "Firestore registration");
-      console.log(`Registration saved for ${serial} in ${Date.now() - started} ms`);
+      const took = Date.now() - started;
 
       if (result.status === "not_found") {
+        console.log(`Registration refused for ${serial}: serial number not found (${took} ms)`);
         return fail(res, 404, "SERIAL_NOT_FOUND", "Invalid QR code. This product could not be verified.");
       }
       if (result.status === "already_registered") {
+        console.log(`Registration refused for ${serial}: this product was already registered (${took} ms)`);
         return fail(res, 409, "ALREADY_REGISTERED", "This product is already registered.", {
           product: result.product,
         });
       }
+
+      console.log(`Registration saved for ${serial} in ${took} ms`);
 
       // Registration is saved. Reply to the customer right away; SMS and email are sent in the
       // background so a slow or blocked provider can never make the registration look failed.
