@@ -1,5 +1,14 @@
+const dns = require("dns");
 const nodemailer = require("nodemailer");
 const { escapeHtml } = require("../utils/validate");
+const { createHttpMailTransport } = require("./httpMailTransport");
+
+// Cloud servers often have no working IPv6 route; connecting to Gmail over IPv6 then fails with ENETUNREACH
+try {
+  dns.setDefaultResultOrder("ipv4first");
+} catch {
+  /* very old Node version */
+}
 
 const { welcomeEmail, acknowledgementEmail, DEFAULT_COMPANY } = require("./emailTemplates");
 
@@ -26,27 +35,69 @@ function detailsTable(rows) {
   return `<table style="border-collapse:collapse;font-size:15px;">${tr}</table>`;
 }
 
-function createMailer({ user, appPassword, feedbackTo, incidentTo, transport, company = {} }) {
-  const companyInfo = { ...DEFAULT_COMPANY, ...Object.fromEntries(Object.entries(company).filter(([, v]) => v)) };
-  const transporter =
-    transport ||
-    nodemailer.createTransport({
+/**
+ * How the emails are sent (first one that is configured wins):
+ *  1. RESEND_API_KEY -> Resend over HTTPS      (works on every host)
+ *  2. BREVO_API_KEY  -> Brevo over HTTPS       (works on every host)
+ *  3. otherwise      -> Gmail SMTP with EMAIL_USER + EMAIL_APP_PASSWORD (blocked by some hosts)
+ * For 1 and 2 set EMAIL_FROM to a sender address that is verified in that service.
+ */
+function pickTransport({ user, appPassword }) {
+  const resendKey = String(process.env.RESEND_API_KEY || "").trim();
+  const brevoKey = String(process.env.BREVO_API_KEY || "").trim();
+  if (resendKey) return { name: "Resend (HTTPS)", http: true, transport: createHttpMailTransport("resend", resendKey) };
+  if (brevoKey) return { name: "Brevo (HTTPS)", http: true, transport: createHttpMailTransport("brevo", brevoKey) };
+  return {
+    name: "Gmail SMTP",
+    http: false,
+    transport: nodemailer.createTransport({
       service: "gmail",
       auth: { user, pass: appPassword },
-      connectionTimeout: 10000,
-      greetingTimeout: 10000,
-      socketTimeout: 10000,
-    });
+      connectionTimeout: 20000,
+      greetingTimeout: 20000,
+      socketTimeout: 30000,
+    }),
+  };
+}
+
+const NETWORK_ERRORS = /ETIMEDOUT|ECONNECTION|ESOCKET|ENETUNREACH|EHOSTUNREACH|ECONNREFUSED|ECONNRESET|EAI_AGAIN|Connection timeout/i;
+
+function createMailer({ user, appPassword, feedbackTo, incidentTo, transport, company = {} }) {
+  const companyInfo = { ...DEFAULT_COMPANY, ...Object.fromEntries(Object.entries(company).filter(([, v]) => v)) };
+  const picked = transport ? { name: "custom transport", http: false, transport } : pickTransport({ user, appPassword });
+  const transporter = picked.transport;
+  if (!transport) console.log(`Email: sending through ${picked.name}`);
+
+  // The address shown in "From". Gmail always uses the logged-in account; Resend / Brevo need a verified sender.
+  const fromAddress = () => String(process.env.EMAIL_FROM || user || "").trim();
 
   function ensureConfigured() {
-    if (!transport && (!user || !appPassword)) {
+    if (transport) return;
+    if (picked.http) {
+      if (!fromAddress()) {
+        throw new Error("EMAIL_FROM is not configured (use a sender address that is verified in your email service)");
+      }
+      return;
+    }
+    if (!user || !appPassword) {
       throw new Error("EMAIL_USER / EMAIL_APP_PASSWORD are not configured");
     }
   }
 
   async function send(options) {
     ensureConfigured();
-    return transporter.sendMail({ from: `"${BRAND}" <${user}>`, ...options });
+    try {
+      return await transporter.sendMail({ from: `"${BRAND}" <${fromAddress()}>`, ...options });
+    } catch (err) {
+      console.error(`Email to ${options.to} failed through ${picked.name} (${err.code || "error"}): ${err.message}`);
+      if (!picked.http && NETWORK_ERRORS.test(`${err.code || ""} ${err.message}`)) {
+        console.error(
+          "Hint: this server cannot reach Gmail. Many hosting services (Render, Railway, DigitalOcean ...) block SMTP. " +
+            "Set RESEND_API_KEY (or BREVO_API_KEY) and EMAIL_FROM in the server environment to send over HTTPS instead."
+        );
+      }
+      throw err;
+    }
   }
 
   /** 1) Welcome email to the customer right after registration. */
