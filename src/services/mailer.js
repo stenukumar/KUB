@@ -79,11 +79,22 @@ function createGmailTransport({ user, appPassword }) {
  *  3. otherwise      -> Gmail SMTP with EMAIL_USER + EMAIL_APP_PASSWORD (blocked by some hosts)
  * For 1 and 2 set EMAIL_FROM to a sender address that is verified in that service.
  */
+/** Removes spaces, line breaks and quotes that often get pasted around a key (e.g. KEY="abc"). */
+const cleanKey = (value) => String(value || "").trim().replace(/^["'`]+|["'`]+$/g, "").trim();
+
 function pickTransport({ user, appPassword }) {
-  const resendKey = String(process.env.RESEND_API_KEY || "").trim();
-  const brevoKey = String(process.env.BREVO_API_KEY || "").trim();
-  if (resendKey) return { name: "Resend (HTTPS)", http: true, transport: createHttpMailTransport("resend", resendKey) };
-  if (brevoKey) return { name: "Brevo (HTTPS)", http: true, transport: createHttpMailTransport("brevo", brevoKey) };
+  const resendKey = cleanKey(process.env.RESEND_API_KEY);
+  const brevoKey = cleanKey(process.env.BREVO_API_KEY);
+  if (brevoKey.startsWith("xsmtpsib-")) {
+    console.warn(
+      "WARNING: BREVO_API_KEY looks like an SMTP key (it starts with xsmtpsib-). The email API needs an API key " +
+        "(it starts with xkeysib-). In Brevo open SMTP & API > API Keys and generate a new API key."
+    );
+  }
+  // Only the start and the last 4 characters are printed, enough to compare with the key list in the email service
+  const hint = (key) => `${key.slice(0, key.indexOf("-") + 1 || 4)}...${key.slice(-4)} (${key.length} characters)`;
+  if (resendKey) return { name: `Resend (HTTPS), key ${hint(resendKey)}`, http: true, transport: createHttpMailTransport("resend", resendKey) };
+  if (brevoKey) return { name: `Brevo (HTTPS), key ${hint(brevoKey)}`, http: true, transport: createHttpMailTransport("brevo", brevoKey) };
   return {
     name: "Gmail SMTP",
     http: false,
@@ -129,6 +140,13 @@ function createMailer({ user, appPassword, feedbackTo, incidentTo, transport, co
       return await transporter.sendMail({ from: `"${BRAND}" <${fromAddress()}>`, ...options });
     } catch (err) {
       console.error(`Email to ${options.to} failed through ${picked.name} (${err.code || "error"}): ${err.message}`);
+      if (picked.http && (err.code === "HTTP_401" || err.code === "HTTP_403")) {
+        console.error(
+          "Hint: the email service did not accept the key or the sender. Check that the key in the server environment is " +
+            "an API key (Brevo: xkeysib-...), copied completely and not deleted or expired, and that EMAIL_FROM is a sender " +
+            "you have verified in that service."
+        );
+      }
       if (!picked.http && NETWORK_ERRORS.test(`${err.code || ""} ${err.message}`)) {
         console.error(
           "Hint: this server cannot reach Gmail. Many hosting services (Render, Railway, DigitalOcean ...) block SMTP. " +
