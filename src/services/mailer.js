@@ -36,6 +36,43 @@ function detailsTable(rows) {
 }
 
 /**
+ * Gmail SMTP that always connects over IPv4. Some servers have no IPv6 route and fail with
+ * "connect ENETUNREACH 2607:f8b0:..." when the name resolves to an IPv6 address.
+ * (A host that blocks SMTP altogether - Render, Railway ... - still needs RESEND_API_KEY / BREVO_API_KEY.)
+ */
+function createGmailTransport({ user, appPassword }) {
+  const HOST = "smtp.gmail.com";
+  let cached = null;
+
+  const make = (host, extra = {}) =>
+    nodemailer.createTransport({
+      host,
+      port: 465,
+      secure: true,
+      auth: { user, pass: appPassword },
+      connectionTimeout: 20000,
+      greetingTimeout: 20000,
+      socketTimeout: 30000,
+      ...extra,
+    });
+
+  async function transporter() {
+    if (cached && cached.expires > Date.now()) return cached.value;
+    let value;
+    try {
+      const [ip] = await dns.promises.resolve4(HOST);
+      value = make(ip, { tls: { servername: HOST } }); // connect to the IPv4 address, check the certificate for the name
+    } catch {
+      value = make(HOST);
+    }
+    cached = { value, expires: Date.now() + 10 * 60 * 1000 };
+    return value;
+  }
+
+  return { sendMail: async (message) => (await transporter()).sendMail(message) };
+}
+
+/**
  * How the emails are sent (first one that is configured wins):
  *  1. RESEND_API_KEY -> Resend over HTTPS      (works on every host)
  *  2. BREVO_API_KEY  -> Brevo over HTTPS       (works on every host)
@@ -50,13 +87,7 @@ function pickTransport({ user, appPassword }) {
   return {
     name: "Gmail SMTP",
     http: false,
-    transport: nodemailer.createTransport({
-      service: "gmail",
-      auth: { user, pass: appPassword },
-      connectionTimeout: 20000,
-      greetingTimeout: 20000,
-      socketTimeout: 30000,
-    }),
+    transport: createGmailTransport({ user, appPassword }),
   };
 }
 
@@ -66,7 +97,15 @@ function createMailer({ user, appPassword, feedbackTo, incidentTo, transport, co
   const companyInfo = { ...DEFAULT_COMPANY, ...Object.fromEntries(Object.entries(company).filter(([, v]) => v)) };
   const picked = transport ? { name: "custom transport", http: false, transport } : pickTransport({ user, appPassword });
   const transporter = picked.transport;
-  if (!transport) console.log(`Email: sending through ${picked.name}`);
+  if (!transport) {
+    console.log(`Email: sending through ${picked.name}`);
+    if (!picked.http && process.env.RENDER) {
+      console.warn(
+        "WARNING: this server runs on Render, which blocks outgoing SMTP (Gmail), so emails will NOT be sent. " +
+          "Add BREVO_API_KEY (or RESEND_API_KEY) and EMAIL_FROM in Render > Environment and redeploy."
+      );
+    }
+  }
 
   // The address shown in "From". Gmail always uses the logged-in account; Resend / Brevo need a verified sender.
   const fromAddress = () => String(process.env.EMAIL_FROM || user || "").trim();

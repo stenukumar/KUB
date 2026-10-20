@@ -1,0 +1,237 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<title>Known-You Seed - QR codes</title>
+<style>
+  * { box-sizing: border-box; }
+  body { margin: 0; font-family: Roboto, Arial, sans-serif; background: #f4f6fa; color: #1f1f1f; }
+  main { max-width: 1100px; margin: 0 auto; padding: 20px 16px 60px; }
+  h1 { font-size: 22px; margin: 0 0 4px; }
+  h2 { font-size: 17px; margin: 0 0 12px; }
+  p.hint { margin: 0 0 14px; color: #6d6c71; font-size: 14px; }
+  section { background: #fff; border-radius: 10px; padding: 18px; margin-top: 16px; box-shadow: 0 1px 3px rgba(0,0,0,.08); }
+  label { display: block; font-size: 12px; color: #6d6c71; margin-bottom: 4px; }
+  input[type=text], input[type=password], input[type=number], textarea { width: 100%; padding: 9px 10px; font-size: 15px; border: 1px solid #c9ccd4; border-radius: 6px; font-family: inherit; }
+  textarea { min-height: 110px; resize: vertical; }
+  .row { display: flex; flex-wrap: wrap; gap: 12px; align-items: flex-end; }
+  .row > div { flex: 1 1 140px; }
+  button { background: #0078ff; color: #fff; border: 0; border-radius: 20px; padding: 10px 20px; font-size: 15px; font-weight: 600; cursor: pointer; }
+  button.light { background: #fff; color: #0078ff; border: 1.5px solid #0078ff; }
+  button:disabled { opacity: .55; cursor: default; }
+  .msg { margin-top: 12px; font-size: 14px; white-space: pre-wrap; }
+  .msg.ok { color: #1a7f37; } .msg.err { color: #c62828; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 14px; margin-top: 14px; }
+  .card { border: 1px solid #e3e4ea; border-radius: 10px; padding: 12px; text-align: center; background: #fff; break-inside: avoid; }
+  .card img.qr { width: 100%; max-width: 170px; height: auto; display: block; margin: 0 auto 8px; }
+  .serial { font-weight: 700; font-size: 15px; word-break: break-all; }
+  .name { font-size: 12px; color: #6d6c71; margin-bottom: 6px; }
+  .badge { display: inline-block; font-size: 11px; padding: 2px 8px; border-radius: 10px; background: #e6f4ea; color: #1a7f37; }
+  .badge.used { background: #fdecea; color: #c62828; }
+  .card button { margin-top: 8px; padding: 6px 12px; font-size: 13px; }
+  .tools { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 12px; align-items: center; }
+  .tools label { display: inline-flex; gap: 6px; align-items: center; margin: 0; font-size: 14px; color: #1f1f1f; }
+  body.no-text .serial, body.no-text .name, body.no-text .badge, body.no-text .card button { display: none; }
+  @media print {
+    body { background: #fff; } .noprint { display: none !important; }
+    main { padding: 0; max-width: none; } section { box-shadow: none; padding: 0; margin: 0; }
+    .grid { grid-template-columns: repeat(3, 1fr); gap: 10px; } .card button { display: none; }
+  }
+</style>
+</head>
+<body>
+<main>
+  <div class="noprint">
+    <h1>Known-You Seed - QR codes</h1>
+    <p class="hint">Create products and print their QR codes. Each QR code holds a secret hash link, never the serial number.</p>
+
+    <section>
+      <h2>1. Admin key</h2>
+      <div class="row">
+        <div style="flex: 3 1 260px"><label for="key">ADMIN_API_KEY (from the server settings)</label><input id="key" type="password" autocomplete="off"></div>
+        <div style="flex: 0 0 auto"><button id="remember" type="button" class="light">Remember in this tab</button></div>
+      </div>
+    </section>
+
+    <section>
+      <h2>2. Create products</h2>
+      <p class="hint">Products that already exist are skipped, never changed.</p>
+      <label for="list">A list: one product per line as  SERIAL, Product name</label>
+      <textarea id="list" placeholder="KYS00005, Papaya Red Lady&#10;KYS00006, Papaya Red Lady"></textarea>
+      <div class="tools"><button id="createList" type="button">Create from list</button></div>
+
+      <hr style="border:0;border-top:1px solid #e3e4ea;margin:18px 0">
+
+      <label>Or a numbered range, for example KYS00005 to KYS00104</label>
+      <div class="row">
+        <div><label for="prefix">Prefix</label><input id="prefix" type="text" placeholder="KYS"></div>
+        <div><label for="start">First number</label><input id="start" type="number" min="0" placeholder="5"></div>
+        <div><label for="count">How many (max 1000)</label><input id="count" type="number" min="1" max="1000" placeholder="100"></div>
+        <div><label for="digits">Digits (zero padded)</label><input id="digits" type="number" min="0" max="12" value="5"></div>
+        <div style="flex: 2 1 220px"><label for="rangeName">Product name</label><input id="rangeName" type="text" placeholder="Papaya Red Lady"></div>
+        <div style="flex: 0 0 auto"><button id="createRange" type="button">Create range</button></div>
+      </div>
+      <div id="createMsg" class="msg"></div>
+    </section>
+
+    <section>
+      <h2>3. QR codes</h2>
+      <div class="row">
+        <div><label for="filterPrefix">Serial starts with (optional)</label><input id="filterPrefix" type="text" placeholder="KYS"></div>
+        <div><label for="limit">How many (max 500)</label><input id="limit" type="number" min="1" max="500" value="60"></div>
+        <div style="flex: 0 0 auto"><label style="display:flex;gap:6px;align-items:center;color:#1f1f1f;font-size:14px"><input id="unregistered" type="checkbox"> Only not registered</label></div>
+        <div style="flex: 0 0 auto"><button id="load" type="button">Show QR codes</button></div>
+      </div>
+      <div class="tools" id="tools" hidden>
+        <button id="print" type="button" class="light">Print sheet</button>
+        <button id="csv" type="button" class="light">Download list (CSV)</button>
+        <label><input id="showText" type="checkbox" checked> Show serial under each QR</label>
+      </div>
+      <div id="loadMsg" class="msg"></div>
+    </section>
+  </div>
+
+  <div id="grid" class="grid"></div>
+</main>
+
+<script>
+(function () {
+  var $ = function (id) { return document.getElementById(id); };
+  var items = [];
+
+  $('key').value = sessionStorage.getItem('adminKey') || '';
+  $('remember').addEventListener('click', function () {
+    sessionStorage.setItem('adminKey', $('key').value.trim());
+    setMsg('createMsg', 'The key is remembered until you close this tab.', true);
+  });
+
+  function setMsg(id, text, ok) {
+    var box = $(id);
+    box.textContent = text || '';
+    box.className = 'msg ' + (ok ? 'ok' : 'err');
+  }
+
+  function api(path, options) {
+    options = options || {};
+    var headers = { 'x-admin-key': $('key').value.trim() };
+    if (options.body) headers['Content-Type'] = 'application/json';
+    return fetch(path, { method: options.method || 'GET', headers: headers, body: options.body }).then(function (res) {
+      var type = res.headers.get('content-type') || '';
+      if (type.indexOf('application/json') !== -1) {
+        return res.json().then(function (data) {
+          if (!res.ok) throw new Error(data.message || ('Error ' + res.status));
+          return data;
+        });
+      }
+      if (!res.ok) throw new Error('Error ' + res.status);
+      return res;
+    });
+  }
+
+  function busy(button, on) { button.disabled = on; }
+
+  function showCreated(data) {
+    var text = data.created.length + ' created, ' + data.skipped.length + ' skipped (already exist)';
+    if (data.invalid.length) text += ', ' + data.invalid.length + ' invalid: ' + data.invalid.slice(0, 5).join(', ');
+    if (data.truncated) text += '. Only the first 1000 were used.';
+    setMsg('createMsg', text, data.invalid.length === 0);
+  }
+
+  $('createList').addEventListener('click', function () {
+    var products = $('list').value.split(/\r?\n/).map(function (line) {
+      var at = line.search(/[,\t]/);
+      return at === -1 ? { serialNumber: line.trim(), productName: '' } : { serialNumber: line.slice(0, at).trim(), productName: line.slice(at + 1).trim() };
+    }).filter(function (p) { return p.serialNumber || p.productName; });
+    if (!products.length) return setMsg('createMsg', 'Type at least one line.', false);
+    var button = $('createList'); busy(button, true); setMsg('createMsg', 'Creating...', true);
+    api('/api/admin/products', { method: 'POST', body: JSON.stringify({ products: products }) })
+      .then(showCreated).catch(function (e) { setMsg('createMsg', e.message, false); })
+      .then(function () { busy(button, false); });
+  });
+
+  $('createRange').addEventListener('click', function () {
+    var body = {
+      prefix: $('prefix').value.trim(), start: $('start').value, count: $('count').value,
+      digits: $('digits').value, productName: $('rangeName').value.trim()
+    };
+    if (!body.prefix || body.start === '' || !body.count || !body.productName) return setMsg('createMsg', 'Fill in prefix, first number, how many and the product name.', false);
+    var button = $('createRange'); busy(button, true); setMsg('createMsg', 'Creating...', true);
+    api('/api/admin/products', { method: 'POST', body: JSON.stringify(body) })
+      .then(showCreated).catch(function (e) { setMsg('createMsg', e.message, false); })
+      .then(function () { busy(button, false); });
+  });
+
+  function make(tag, className, text) {
+    var node = document.createElement(tag);
+    if (className) node.className = className;
+    if (text !== undefined) node.textContent = text;
+    return node;
+  }
+
+  function downloadPng(item, button) {
+    button.disabled = true;
+    api('/api/admin/qr/' + encodeURIComponent(item.serialNumber) + '.png?size=1000')
+      .then(function (res) { return res.blob(); })
+      .then(function (blob) {
+        var link = document.createElement('a');
+        link.href = URL.createObjectURL(blob);
+        link.download = item.serialNumber + '.png';
+        document.body.appendChild(link); link.click(); link.remove();
+        setTimeout(function () { URL.revokeObjectURL(link.href); }, 1000);
+      })
+      .catch(function (e) { setMsg('loadMsg', e.message, false); })
+      .then(function () { button.disabled = false; });
+  }
+
+  function render() {
+    var grid = $('grid');
+    grid.replaceChildren();
+    items.forEach(function (item) {
+      var card = make('div', 'card');
+      var img = make('img', 'qr'); img.src = item.svg; img.alt = 'QR code ' + item.serialNumber;
+      card.appendChild(img);
+      card.appendChild(make('div', 'serial', item.serialNumber));
+      card.appendChild(make('div', 'name', item.productName));
+      card.appendChild(make('span', 'badge' + (item.isRegistered ? ' used' : ''), item.isRegistered ? 'Registered' : 'Not registered'));
+      var button = make('button', 'light', 'Download PNG');
+      button.type = 'button';
+      button.addEventListener('click', function () { downloadPng(item, button); });
+      card.appendChild(document.createElement('br'));
+      card.appendChild(button);
+      grid.appendChild(card);
+    });
+    $('tools').hidden = items.length === 0;
+  }
+
+  $('load').addEventListener('click', function () {
+    var query = '?prefix=' + encodeURIComponent($('filterPrefix').value.trim()) +
+      '&limit=' + encodeURIComponent($('limit').value || '60') + ($('unregistered').checked ? '&unregistered=1' : '');
+    var button = $('load'); busy(button, true); setMsg('loadMsg', 'Loading...', true);
+    api('/api/admin/qr-links' + query).then(function (data) {
+      items = data.items;
+      render();
+      var text = items.length + ' QR codes shown.';
+      if (data.scanLimitReached) text += ' Only the first 1000 products were searched - use "Serial starts with" to narrow it down.';
+      setMsg('loadMsg', text, true);
+    }).catch(function (e) { items = []; render(); setMsg('loadMsg', e.message, false); })
+      .then(function () { busy(button, false); });
+  });
+
+  $('print').addEventListener('click', function () { window.print(); });
+
+  $('showText').addEventListener('change', function () { document.body.classList.toggle('no-text', !this.checked); });
+
+  $('csv').addEventListener('click', function () {
+    var cell = function (v) { return '"' + String(v).replace(/"/g, '""') + '"'; };
+    var rows = ['serialNumber,productName,qrLink'].concat(items.map(function (i) { return [i.serialNumber, i.productName, i.url].map(cell).join(','); }));
+    var link = document.createElement('a');
+    link.href = URL.createObjectURL(new Blob([rows.join('\n') + '\n'], { type: 'text/csv' }));
+    link.download = 'qr-links.csv';
+    document.body.appendChild(link); link.click(); link.remove();
+  });
+})();
+</script>
+</body>
+</html>
