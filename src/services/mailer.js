@@ -85,6 +85,12 @@ const cleanKey = (value) => String(value || "").trim().replace(/^["'`]+|["'`]+$/
 function pickTransport({ user, appPassword }) {
   const resendKey = cleanKey(process.env.RESEND_API_KEY);
   const brevoKey = cleanKey(process.env.BREVO_API_KEY);
+  if (brevoKey && !brevoKey.startsWith("xkeysib-") && !brevoKey.startsWith("xsmtpsib-")) {
+    console.warn(
+      `WARNING: BREVO_API_KEY starts with "${brevoKey.slice(0, 9)}" but a Brevo API key starts with exactly xkeysib- . ` +
+        "Check the start of the value in the server environment for an extra or missing character."
+    );
+  }
   if (brevoKey.startsWith("xsmtpsib-")) {
     console.warn(
       "WARNING: BREVO_API_KEY looks like an SMTP key (it starts with xsmtpsib-). The email API needs an API key " +
